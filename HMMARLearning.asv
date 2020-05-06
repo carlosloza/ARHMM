@@ -70,16 +70,13 @@ while fl
         if i == 1
             betaback(:, iback(i)) = c(iback(i))*1;
         else
-            Fnback = -fliplr(y(iback(i) - p + 1: iback(i))); 
-            aux1 = zeros(ncomp, 1);
+            Fnback = -fliplr(y(iback(i) - p + 1: iback(i)));
+            aux = zeros(ncomp, 1);
             for j = 1:ncomp
-                aux2 = zeros(1, ncomp);
                 for k = 1:ncomp
-                    aux2(k) = betaback(k, iback(i) + 1) * normpdf(y(iback(i) + 1), Fnback*ak(:,k), sigk(k)) * A(j, k);
+                    
                 end
-                aux1(j) = sum(aux2);
             end
-            betaback(:, iback(i)) = c(iback(i))*aux1;
         end
     end
     
@@ -88,18 +85,19 @@ while fl
     eta = zeros(ncomp, ncomp, length(y));
     % Special case for first gamma (to avoid an if inside the for loop)
     i = p + 1;
-    gam(:, i) = alphaforw(:,i).*betaback(:,i);   
+    gam(:, i) = (exp(alphaforw(:,i)).*exp(betaback(:,i)))/pX;   
     for i = p+2:numel(y)
         % Gamma
-        gam(:, i) = alphaforw(:,i).*betaback(:,i);
+        gam(:, i) = (exp(alphaforw(:,i)).*exp(betaback(:,i)))/pX;
         % Xi
         Fn = -fliplr(y(i - p: i - 1));
         for j = 1:ncomp
             for k = 1:ncomp
-                eta(j, k, i) = c(i) * alphaforw(j, i - 1) * normpdf(y(i), Fn*ak(:,k), sigk(k)) * A(j,k) * betaback(k, i);
+                eta(j, k, i) = exp(alphaforw(j, i - 1))*normpdf(y(i), Fn*ak(:,k), sigk(k))*A(j,k)*exp(betaback(k, i));
             end
         end
     end
+    eta = eta/pX;
  
     % M STEP
     % Initial latent variable probabilities
