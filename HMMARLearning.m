@@ -88,15 +88,15 @@ while fl
     eta = zeros(ncomp, ncomp, length(y));
     % Special case for first gamma (to avoid an if inside the for loop)
     i = p + 1;
-    gam(:, i) = alphaforw(:,i).*betaback(:,i);   
+    gam(:, i) = alphaforw(:,i).*betaback(:,i)/(sum(alphaforw(:,i).*betaback(:,i)));   
     for i = p+2:numel(y)
         % Gamma
-        gam(:, i) = alphaforw(:,i).*betaback(:,i);
+        gam(:, i) = alphaforw(:,i).*betaback(:,i)/(sum(alphaforw(:,i).*betaback(:,i)));
         % Xi
         Fn = -fliplr(y(i - p: i - 1));
         for j = 1:ncomp
             for k = 1:ncomp
-                eta(j, k, i) = c(i) * alphaforw(j, i - 1) * normpdf(y(i), Fn*ak(:,k), sigk(k)) * A(j,k) * betaback(k, i);
+                eta(j, k, i) = alphaforw(j, i - 1) * normpdf(y(i), Fn*ak(:,k), sigk(k)) * A(j,k) * betaback(k, i);
             end
         end
     end
