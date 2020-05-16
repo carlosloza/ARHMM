@@ -1,17 +1,20 @@
 function HMMAR = HMMARLearning(y, ev_y, theta, ncomp, evTh, A, sigk)
 % Implementation with scaled alphas and betas
+dmin = 2e-300;          % To avoid underflow
 n_it = 20;
 th = 0.01;
 p = size(theta, 1);
-X = [];
+X = zeros(length(y) - p, p);
+ct = 1;
 for i = p + 1:length(y)
     Fn = -fliplr(y(i - p:i - 1));
-    X = [X; Fn];
+    X(ct, :) = Fn;
+    ct = ct + 1;
 end
 % Cluster AR coefficients without low evidence
 idxTh = ev_y > evTh;
 thetaev = theta(:, idxTh);
-GMModel = fitgmdist(thetaev', ncomp);
+GMModel = fitgmdist(thetaev', ncomp, 'Replicates', 10, 'RegularizationValue', 0.1, 'CovarianceType', 'diagonal');
 pik = GMModel.ComponentProportion';
 pik_ini = pik;
 ak = GMModel.mu';
@@ -32,8 +35,8 @@ while fl
             Fnforw = -fliplr(y(iforw(i) - p:iforw(i) - 1));
             aux = zeros(ncomp, 1);
             for k = 1:ncomp
-                %alphaforw(k, iforw(i)) = pik(k) * max([normpdf(y(iforw(i)), Fnforw*ak(:,k), sigk(k)) 0.01]);    % Sort of regularization
-                aux(k) = pik(k) * normpdf(y(iforw(i)), Fnforw*ak(:,k), sigk(k));    % Sort of regularization
+                %aux(k) = pik(k) * normpdf(y(iforw(i)), Fnforw*ak(:,k), sigk(k));
+                aux(k) = pik(k) * max([normpdf(y(iforw(i)), Fnforw*ak(:,k), sigk(k)), dmin]);
             end
             % Scaled versions
             c(iforw(i)) = 1/sum(aux);
@@ -43,22 +46,13 @@ while fl
             Fnforw = -fliplr(y(iforw(i) - p:iforw(i) - 1));
             aux = zeros(ncomp, 1);
             for j = 1:ncomp
-                pem = normpdf(y(iforw(i)), Fnforw*ak(:,j), sigk(j));
+                %pem = normpdf(y(iforw(i)), Fnforw*ak(:,j), sigk(j));
+                pem = max([normpdf(y(iforw(i)), Fnforw*ak(:,j), sigk(j)), dmin]);
                 aux(j) = pem*(alphaforw(:, iforw(i) - 1)'*A(:,j));
             end
             % Scaled versions
             c(iforw(i)) = 1/sum(aux);
             alphaforw(:, iforw(i)) = c(iforw(i))*aux;
-            % Beta
-%             Fnback = -fliplr(y(iback(i) - p + 1: iback(i)));
-%             for j = 1:ncomp
-%                 a = zeros(1, ncomp);
-%                 for k = 1:ncomp
-%                     a(k) = betaback(k, iback(i) + 1) + log(normpdf(y(iback(i) + 1), Fnback*ak(:,k), sigk(k))) + log(A(j, k));
-%                 end
-%                 b = max(a);
-%                 betaback(j, iback(i)) =  b + log(sum(exp(a - b)));
-%             end
         end       
     end    
     % Likelihood
@@ -75,7 +69,8 @@ while fl
             for j = 1:ncomp
                 aux2 = zeros(1, ncomp);
                 for k = 1:ncomp
-                    aux2(k) = betaback(k, iback(i) + 1) * normpdf(y(iback(i) + 1), Fnback*ak(:,k), sigk(k)) * A(j, k);
+                    %aux2(k) = betaback(k, iback(i) + 1) * normpdf(y(iback(i) + 1), Fnback*ak(:,k), sigk(k)) * A(j, k);
+                    aux2(k) = betaback(k, iback(i) + 1) * max([normpdf(y(iback(i) + 1), Fnback*ak(:,k), sigk(k)), dmin]) * A(j, k);
                 end
                 aux1(j) = sum(aux2);
             end
@@ -96,7 +91,8 @@ while fl
         Fn = -fliplr(y(i - p: i - 1));
         for j = 1:ncomp
             for k = 1:ncomp
-                eta(j, k, i) = alphaforw(j, i - 1) * normpdf(y(i), Fn*ak(:,k), sigk(k)) * A(j,k) * betaback(k, i);
+                %eta(j, k, i) = alphaforw(j, i - 1) * normpdf(y(i), Fn*ak(:,k), sigk(k)) * A(j,k) * betaback(k, i);
+                eta(j, k, i) = alphaforw(j, i - 1) * max([normpdf(y(i), Fn*ak(:,k), sigk(k)), dmin]) * A(j,k) * betaback(k, i);
             end
         end
     end
@@ -119,10 +115,16 @@ while fl
     % AR coefficients and nise variance per mode
     for k = 1:ncomp
         % AR coefficients
-        Ck = diag(sqrt(gam(k, p + 1:end)));
-        Xtil = Ck*X;
-        Ytil = Ck*y(p + 1:end)';
+        Ckv = sqrt(gam(k, p + 1:end));
+        %Ck = diag(sqrt(gam(k, p + 1:end)));
+        %Xtil = Ck*X;
+        Xtil = bsxfun(@times, Ckv', X);
+        %Ytil = Ck*y(p + 1:end)';
+        Ytil = (Ckv.*y(p + 1:end))';
+        
         ak(:, k) = (Xtil'*Xtil)\(Xtil'*Ytil);
+        %ak(:, k) = robustfit(Xtil, Ytil, 'huber', [], 'off');
+        
         % Noise variance
         aux = zeros(1, length(y));
         for i = p + 1:length(y)
@@ -141,6 +143,7 @@ while fl
             HMMAR.A = A;
             HMMAR.ak = ak;
             HMMAR.sig = sigk;
+            HMMAR.gam = gam;
             HMMAR.loglike = loglike;
             break       
         end
@@ -151,6 +154,7 @@ while fl
         HMMAR.A = A;
         HMMAR.ak = ak;
         HMMAR.sig = sigk;
+        HMMAR.gam = gam;
         HMMAR.loglike = loglike;
         break       
     end

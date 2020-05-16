@@ -1,0 +1,12 @@
+clearvars
+close all
+clc
+
+kCV = 10;
+
+% Load data
+load('DREAMS/Subject6.mat')
+
+p_v = [2 5 10 15 20];
+
+[p, PowRatio] = HMMARCVPowRatio(X, Fs, p_v, kCV);

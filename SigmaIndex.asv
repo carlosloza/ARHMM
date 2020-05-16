@@ -1,0 +1,15 @@
+function idxSpindles = SigmaIndex(y, Fs, SigmaIndexTh)
+
+idxSpindles = true(size(y));
+
+% Segmentation in x-second snippets
+LSp = 1*Fs;
+tEp(:, 1) = 1:LSp:length(y);
+tEp(:, 2) = tEp(:, 1) + LSp - 1;
+tEp(end, 2) = length(y);
+n = min([2^nextpow2(sSnippet), 512]);
+for i = 1:size(tEp, 1)
+    
+end
+
+end
