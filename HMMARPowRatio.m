@@ -1,4 +1,4 @@
-function [PowRatio, LogLike] = HMMARPowRatio(y, Fs, p_v)
+function [PowRatio, LogLike, akcell] = HMMARPowRatio(y, Fs, p_v)
 
 % NO CROSS-VALIDATION
 
@@ -28,6 +28,7 @@ for i = 1:length(p_v)
     [theta, ev_y] = KalmanAR(y, p_v(i), alph, sig2n);
     sigk = sqrt(sig2n)*ones(1, ncomp);
     HMMAR = HMMARLearning(y, ev_y, theta, ncomp, evTh, A, sigk);
+    akcell{i} = HMMAR.ak;
     pwBand = zeros(1, ncomp);
     for k = 1:ncomp
         [H, f] = freqz(1, [1; HMMAR.ak(:,k)], f, Fs);

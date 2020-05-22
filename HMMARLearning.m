@@ -4,12 +4,9 @@ dmin = 2e-300;          % To avoid underflow
 n_it = 20;
 th = 0.01;
 p = size(theta, 1);
-X = zeros(length(y) - p, p);
-ct = 1;
+X = zeros(length(y), p);
 for i = p + 1:length(y)
-    Fn = -fliplr(y(i - p:i - 1));
-    X(ct, :) = Fn;
-    ct = ct + 1;
+    X(i, :) = -fliplr(y(i - p:i - 1));
 end
 % Cluster AR coefficients without low evidence
 idxTh = ev_y > evTh;
@@ -22,121 +19,101 @@ ak_ini = ak;
 fl = 1;
 ct = 0;
 loglike = [];
+ufaux = dmin*ones(1, ncomp);
+iforw = p + 1:numel(y);
+iback = numel(y):-1:p+1;
 while fl
     % E STEP
     % Forward and backward algorithm
     c = ones(1, numel(y));
-    % Alpha
-    alphaforw = ones(ncomp, length(y));
-    iforw = p+1:numel(y);
-    for i = 1:numel(iforw)
-        if i == 1
-            % Alpha
-            Fnforw = -fliplr(y(iforw(i) - p:iforw(i) - 1));
-            aux = zeros(ncomp, 1);
-            for k = 1:ncomp
-                %aux(k) = pik(k) * normpdf(y(iforw(i)), Fnforw*ak(:,k), sigk(k));
-                aux(k) = pik(k) * max([normpdf(y(iforw(i)), Fnforw*ak(:,k), sigk(k)), dmin]);
-            end
-            % Scaled versions
-            c(iforw(i)) = 1/sum(aux);
-            alphaforw(:, iforw(i)) = c(iforw(i))*aux;
-        else
-            % Alpha
-            Fnforw = -fliplr(y(iforw(i) - p:iforw(i) - 1));
-            aux = zeros(ncomp, 1);
-            for j = 1:ncomp
-                %pem = normpdf(y(iforw(i)), Fnforw*ak(:,j), sigk(j));
-                pem = max([normpdf(y(iforw(i)), Fnforw*ak(:,j), sigk(j)), dmin]);
-                aux(j) = pem*(alphaforw(:, iforw(i) - 1)'*A(:,j));
-            end
-            % Scaled versions
-            c(iforw(i)) = 1/sum(aux);
-            alphaforw(:, iforw(i)) = c(iforw(i))*aux;
-        end       
+    alphaforw = ones(ncomp, length(y));    
+    pemaux1 = (1./(sqrt(2*pi).*sigk));
+    pemaux2 = -(1./(2.*sigk.^2));
+    % ALPHA
+    % First iteration
+    i = 1;
+    Fnforw = X(iforw(i), :);
+    pemk = pemaux1.*exp(pemaux2.*(y(iforw(i)) - Fnforw*ak).^2);
+    pemkuf = [pemk' dmin*ones(ncomp, 1)];
+    aux = pik.*max(pemkuf,[], 2);
+    % Scaled versions
+    c(iforw(i)) = 1/sum(aux);
+    alphaforw(:, iforw(i)) = c(iforw(i))*aux;
+    % Rest of iterations
+    for i = 2:numel(iforw)        
+        % Alpha
+        Fnforw = X(iforw(i), :);
+        pemk = pemaux1.*exp(pemaux2.*(y(iforw(i)) - Fnforw*ak).^2);
+        pemkuf = [pemk; ufaux];
+        aux = (max(pemkuf,[], 1)').*(A' * alphaforw(:, iforw(i) - 1));
+        % Scaled versions
+        c(iforw(i)) = 1/sum(aux);
+        alphaforw(:, iforw(i)) = c(iforw(i))*aux;
     end    
     % Likelihood
     loglike = [loglike -sum(log(c))];
-    % Beta
-    iback = numel(y):-1:p+1;
+    % Beta, Gamma and Xi
     betaback = ones(ncomp, length(y));
-    for i = 1:numel(iback)
-        if i == 1
-            betaback(:, iback(i)) = c(iback(i))*1;
-        else
-            Fnback = -fliplr(y(iback(i) - p + 1: iback(i))); 
-            aux1 = zeros(ncomp, 1);
-            for j = 1:ncomp
-                aux2 = zeros(1, ncomp);
-                for k = 1:ncomp
-                    %aux2(k) = betaback(k, iback(i) + 1) * normpdf(y(iback(i) + 1), Fnback*ak(:,k), sigk(k)) * A(j, k);
-                    aux2(k) = betaback(k, iback(i) + 1) * max([normpdf(y(iback(i) + 1), Fnback*ak(:,k), sigk(k)), dmin]) * A(j, k);
-                end
-                aux1(j) = sum(aux2);
-            end
-            betaback(:, iback(i)) = c(iback(i))*aux1;
-        end
-    end
+    xi = zeros(ncomp, ncomp, length(y));
     
-    % Gamma and Xi    
-    gam = zeros(ncomp, length(y));
-    eta = zeros(ncomp, ncomp, length(y));
-    % Special case for first gamma (to avoid an if inside the for loop)
-    i = p + 1;
-    gam(:, i) = alphaforw(:,i).*betaback(:,i)/(sum(alphaforw(:,i).*betaback(:,i)));   
-    for i = p+2:numel(y)
-        % Gamma
-        gam(:, i) = alphaforw(:,i).*betaback(:,i)/(sum(alphaforw(:,i).*betaback(:,i)));
+    % BETA
+    % First iteration
+    i = 1;
+    betaback(:, iback(i)) = c(iback(i))*1;
+    % Rest of iterations
+    for i = 2:numel(iback)
+        Fnback = X(iback(i) + 1, :);        
+        pemk = pemaux1.*exp(pemaux2.*(y(iback(i) + 1) - Fnback*ak).^2);
+        pemkuf = [pemk; ufaux];
+        aux = bsxfun(@times, max(pemkuf, [], 1), A) * betaback(:, iback(i) + 1);
+        betaback(:, iback(i)) = c(iback(i))*aux;  
+        
         % Xi
-        Fn = -fliplr(y(i - p: i - 1));
-        for j = 1:ncomp
-            for k = 1:ncomp
-                %eta(j, k, i) = alphaforw(j, i - 1) * normpdf(y(i), Fn*ak(:,k), sigk(k)) * A(j,k) * betaback(k, i);
-                eta(j, k, i) = alphaforw(j, i - 1) * max([normpdf(y(i), Fn*ak(:,k), sigk(k)), dmin]) * A(j,k) * betaback(k, i);
-            end
-        end
+        Fn = X(iback(i), :);
+        pemk = pemaux1.*exp(pemaux2.*(y(iback(i)) - Fn*ak).^2);
+        pemkuf = [pemk; ufaux];        
+        aux = ((betaback(:, iback(i))*alphaforw(:, iback(i) - 1)')' .* bsxfun(@times, max(pemkuf, [], 1), A));
+        xi(:, :, iback(i)) = aux;       
+
+%         for j = 1:ncomp
+%             xi(j, :, iback(i)) = alphaforw(j, iback(i) - 1).*(max(pemkuf, [], 1).*A(j, :))'.*betaback(:, iback(i));
+%         end
     end
+    % Gamma
+    gamaux = alphaforw.*betaback;
+    gam = bsxfun(@rdivide, gamaux, sum(gamaux, 1));
+    gam(:, 1:p) = 0;
  
     % M STEP
     % Initial latent variable probabilities
     pik = gam(:,p + 1)./sum(gam(:,p + 1));
-    % State transition probabilities
+    % State transition probabilities, AR coefficients and noise variance
+    % per mode
     A = zeros(ncomp, ncomp);
-    for j = 1:ncomp
-        denA = 0;
-        for kk = 1:ncomp
-            denA = denA + sum(eta(j, kk , p+2:end));
-        end
-        for k = 1:ncomp
-            numA = sum(eta(j, k, p+2:end));
-            A(j,k) = numA/denA;
-        end
-    end
-    % AR coefficients and nise variance per mode
     for k = 1:ncomp
+        % Transition probabilities
+        aux = squeeze(xi(k, :, p+2:end));
+        A(k, :) = sum(aux,2)'/sum(aux(:));
+        
         % AR coefficients
         Ckv = sqrt(gam(k, p + 1:end));
-        %Ck = diag(sqrt(gam(k, p + 1:end)));
-        %Xtil = Ck*X;
-        Xtil = bsxfun(@times, Ckv', X);
-        %Ytil = Ck*y(p + 1:end)';
+        Xtil = bsxfun(@times, Ckv', X(p+1:end, :));
         Ytil = (Ckv.*y(p + 1:end))';
         
         ak(:, k) = (Xtil'*Xtil)\(Xtil'*Ytil);
+        
         %ak(:, k) = robustfit(Xtil, Ytil, 'huber', [], 'off');
         
+        %[B, FitInfo] = lasso(Xtil, Ytil, 'CV', 10, 'RelTol', 1e-2);
+        %ak(:, k) = B(:, FitInfo.IndexMinMSE);
+        
         % Noise variance
-        aux = zeros(1, length(y));
-        for i = p + 1:length(y)
-            Fn = -fliplr(y(i - p:i - 1));
-            aux(i) = gam(k, i)*(y(i) - Fn*ak(:,k))^2;
-        end
-        sigk(k) = sqrt(sum(aux)/sum(gam(k,:)));
+        err = (X(p+1:end,:)*ak(:,k))' - y(p+1:end);
+        aux = (err.^2)*gam(k, p+1:end)';
+        sigk(k) = sqrt(aux/sum(gam(k,:)));
     end
     
-    
-    ct = ct + 1;
-    
+    ct = ct + 1;    
     if ct > 1
         if abs(loglike(ct) - loglike(ct-1))/abs(loglike(ct - 1)) <= th
             HMMAR.pi = pik;
