@@ -3,7 +3,7 @@ clearvars
 close all
 clc
 
-p = 20;
+p = 8;
 alph = 0.1;
 evTh = 0.5;            % Evidence threshold
 ncomp = 2;

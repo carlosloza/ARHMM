@@ -1,0 +1,12 @@
+function plotPSD_ARHMM(HMMAR, Fs)
+% Plot Power Spectral Density (PSD)
+
+figure
+K = size(HMMAR.a, 2);
+for k = 1:K
+    [H, F] = freqz(1, [1; HMMAR.a(:,k)], 1024, Fs);
+    subplot(K, 1, k)
+    %plot(F, 20*log10(abs(H)))  
+    plot(F, abs(H))  
+end
+end
